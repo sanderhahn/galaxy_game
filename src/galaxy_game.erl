@@ -27,6 +27,7 @@
 -type attack()::{laser | nuclear, planet()}.
 
 -export([setup_universe/3, teardown_universe/1, simulate_attack/2]).
+%-compile(export_all).
 
 %% @doc Set up a universe described by the input.
 %% The imput is asumed to be minimal and non redundant (i.e. if there is an
@@ -36,7 +37,11 @@
 -spec setup_universe([planet()], [shield()], [alliance()]) -> ok.
 %% @end
 setup_universe(Planets, Shields, Alliances) ->
-    unimplemented.
+    Galaxy = self(),
+    setup_planets(Planets, Galaxy),
+    setup_shields(Shields, Galaxy),
+    setup_alliences(Alliances, Galaxy),
+    ok.
 
 %% @doc Clean up a universe simulation.
 %% This function will only be called after calling setup_universe/3 with the
@@ -46,7 +51,8 @@ setup_universe(Planets, Shields, Alliances) ->
 -spec teardown_universe([planet()]) -> ok.
 %% @end
 teardown_universe(Planets) ->
-    unimplemented.
+    teardown_planets(Planets),
+    ok.
 
 %% @doc Simulate an attack.
 %% This function will only be called after setting up a universe with the same
@@ -55,5 +61,103 @@ teardown_universe(Planets) ->
 -spec simulate_attack([planet()], [attack()]) -> Survivors::[planet()].
 %% @end
 simulate_attack(Planets, Actions) ->
-    unimplemented.
+    lists:map(fun simulate_action/1, Actions),
+
+    % @todo not sure how deterministally know if all simulate actions are propagated... implementation needs a better design? need to learn some more Erlang/OTP :)
+    
+    % Wait a bit for planets to die off.
+    timer:sleep(10),
+
+    [ Planet || Planet <- Planets , whereis(Planet) =/= undefined].
+
+%% Not really sure if my approach with the ack messages is
+%% the right way to make the galaxy synchronize on
+%% the different phases.
+
+%% It feels kind of ugly and may not be the OTP way...
+
+setup_planets(Planets, Galaxy) ->
+    [ setup_planet(Planet, Galaxy) || Planet <- Planets],
+    ok.
+
+setup_shields(Shields, Galaxy) ->
+    [ setup_shield(Shield, Galaxy) || Shield <- Shields],
+    ok.
+
+setup_alliences(Alliences, Galaxy) ->
+    [ setup_allience(Allience, Galaxy) || Allience <- Alliences],
+    ok.
+
+teardown_planets(Planets) ->
+    [ teardown_planet(Planet) || Planet <- Planets, whereis(Planet) =/= undefined].
+
+setup_planet(Planet, Galaxy) ->
+    proc_lib:spawn(fun() ->
+        register(Planet, self()),
+        io:format("Planet ~p created~n", [Planet]),
+        Galaxy ! ack,
+        planet_loop(Planet, false)
+    end),
+    receive
+        ack -> ok
+    end,
+    ok.
+
+setup_shield(Shield, Galaxy) ->
+    Planet = Shield,
+    whereis(Planet) ! {shield, Galaxy},
+    receive
+        ack -> ok
+    end,
+    ok.
+
+teardown_planet(Planet) ->
+    exit(whereis(Planet), kill).
+
+setup_allience({Planet, Partner}, Galaxy) ->
+    io:format("~p ~p~n", [Planet, Partner]),
+    whereis(Planet) ! {allience, Partner, Galaxy},
+    receive
+        ack -> ok
+    end,
+    ok.
+
+planet_loop(Planet, HasShield) ->
+    receive
+
+        {shield, Galaxy} ->
+            io:format("Planet ~p got a shield~n", [Planet]),
+            process_flag(trap_exit, true),
+            Galaxy ! ack,
+            planet_loop(Planet, true);
+
+        {allience, Partner, Galaxy} ->
+            io:format("Planet ~p allied with ~p~n", [Planet, Partner]),
+            link(whereis(Partner)),
+            Galaxy ! ack,
+            planet_loop(Planet, HasShield);
+
+        {'EXIT', _FromPid, laser} ->
+            case HasShield of
+                true ->
+                    io:format("Planet ~p attacked with laser~n", [Planet]),
+                    planet_loop(Planet, false);
+                false ->
+                    io:format("Planet ~p attacked with laser and destroyed~n", [Planet])
+            end;
+
+        {'EXIT', _FromPid, nuclear} ->
+            io:format("Planet ~p destroyed with canon~n", [Planet]);
+
+        {'EXIT', _FromPid, _Reason} ->
+            io:format("Planet ~p destroyed~n", [Planet])
+    end.
+
+simulate_action({laser, Planet}) ->
+    io:format("Shoot laser at ~p~n", [Planet]),
+    exit(whereis(Planet), laser);
+
+simulate_action({nuclear, Planet}) ->
+    io:format("Nuclear canon shot at ~p~n", [Planet]),
+    exit(whereis(Planet), nuclear).
 

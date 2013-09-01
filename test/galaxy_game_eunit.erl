@@ -7,7 +7,7 @@ galaxy_game_test_() ->
     S = [venus, earth],
     As = [{mercury, venus}, {venus, earth}],
     A = [{nuclear, venus}, {laser, earth}],
-    Exp = [earth, mars],
+    Exp = [mercury, mars],
     [
         {setup, 
             %Setup
