@@ -93,6 +93,7 @@ teardown_planets(Planets) ->
 
 setup_planet(Planet, Galaxy) ->
     proc_lib:spawn(fun() ->
+        process_flag(trap_exit, true),
         register(Planet, self()),
         io:format("Planet ~p created~n", [Planet]),
         Galaxy ! ack,
@@ -127,7 +128,6 @@ planet_loop(Planet, HasShield) ->
 
         {shield, Galaxy} ->
             io:format("Planet ~p got a shield~n", [Planet]),
-            process_flag(trap_exit, true),
             Galaxy ! ack,
             planet_loop(Planet, true);
 
@@ -147,7 +147,7 @@ planet_loop(Planet, HasShield) ->
             end;
 
         {'EXIT', _FromPid, nuclear} ->
-            io:format("Planet ~p destroyed with canon~n", [Planet]);
+            io:format("Planet ~p destroyed with cannon~n", [Planet]);
 
         {'EXIT', _FromPid, _Reason} ->
             io:format("Planet ~p destroyed~n", [Planet])
